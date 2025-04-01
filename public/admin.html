@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>ChatSphere Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <style>
+        :root {
+            --primary: #5163ff;
+            --primary-dark: #3f4ed9;
+            --background: #1e1e2f;
+            --text: #ffffff;
+            --glass: rgba(255, 255, 255, 0.05);
+            --shadow: rgba(0, 0, 0, 0.2);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+.reply-btn:hover{
+color: #FF474D;
+cursor: pointer;
+}
+        body {
+            background: linear-gradient(135deg, var(--background) 0%, #27293d 100%);
+            min-height: 100vh;
+            color: var(--text);
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow-x: hidden;
+        }
+
+        #admin-container {
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 1200px;
+            box-shadow: 0 10px 40px var(--shadow);
+            min-height: 600px;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            display: flex;
+            flex-direction: row;
+        }
+
+        h2 {
+            color: var(--text);
+            margin-bottom: 25px;
+            text-align: center;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            font-size: 24px;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px 18px;
+            margin: 12px 0;
+            border: none;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 12px rgba(81, 99, 255, 0.4);
+        }
+
+        input::placeholder {
+            color: #aaa;
+            opacity: 0.8;
+        }
+
+        button {
+            padding: 12px 24px;
+            margin: 12px 8px 0 0;
+            border: none;
+            border-radius: 10px;
+            background: var(--primary);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: var(--primary-dark);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(81, 99, 255, 0.5);
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        #admin-chat-area {
+            flex: 3;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #messages {
+            height: 450px;
+            overflow-y: auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 15px;
+            margin-bottom: 25px;
+            position: relative;
+        }
+
+        .message {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 14px 18px;
+            border-radius: 12px;
+            margin: 12px 0;
+            word-wrap: break-word;
+            animation: slideIn 0.3s ease;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            position: relative;
+        }
+
+        .message:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .message strong {
+            color: var(--primary);
+            font-weight: 600;
+            min-width: 100px;
+        }
+
+        .message-text {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .message span {
+            color: #8888a3;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .message img, .message video {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            color: #ff5555;
+            font-size: 16px;
+            cursor: pointer;
+            display: none;
+        }
+
+        .message:hover .delete-btn {
+            display: block;
+        }
+
+        .delete-btn:hover {
+            color: #ff7777;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        #message-input {
+            flex-grow: 1;
+            margin: 0;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        #char-counter {
+            font-size: 12px;
+            color: #aaa;
+            text-align: right;
+            margin-top: 5px;
+        }
+
+        #char-counter.warning {
+            color: #ff5555;
+        }
+
+        #user-list-container {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 15px;
+            padding: 20px;
+            margin-left: 20px;
+            height: 600px;
+            overflow-y: auto;
+        }
+
+        #user-list-container h3 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        #user-list {
+            list-style: none;
+        }
+
+        #user-list li {
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 5px 0;
+            border-radius: 8px;
+            color: var(--text);
+        }
+
+        #messages::-webkit-scrollbar, #user-list-container::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        #messages::-webkit-scrollbar-track, #user-list-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #messages::-webkit-scrollbar-thumb, #user-list-container::-webkit-scrollbar-thumb {
+            background: rgba(81, 99, 255, 0.6);
+            border-radius: 5px;
+        }
+
+        #messages::-webkit-scrollbar-thumb:hover, #user-list-container::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 12px;
+            color: #00cc00;
+        }
+
+        @media (max-width: 900px) {
+            #admin-container {
+                flex-direction: column;
+            }
+
+            #user-list-container {
+                margin-left: 0;
+                margin-top: 20px;
+                height: 200px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            #admin-container {
+                margin: 15px;
+                padding: 25px;
+            }
+
+            .input-container {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+                margin: 8px 0;
+            }
+
+            .message {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="admin-container">
+        <div id="admin-chat-area">
+            <h2>Admin Console</h2>
+            <div id="messages">
+                <span class="status">Connecting...</span>
+            </div>
+            <div class="input-container">
+            <div id="replying-to" style="display: none; cursor: pointer; padding: 5px; background: rgba(255, 255, 255, 0.03);"></div>
+                <input type="text" id="message-input" placeholder="Type message or /kick /ban /unban /admingrant /adminrevoke /delete" maxlength="2000">
+                <button onclick="sendMessage()">Send</button>
+                <button onclick="document.getElementById('file-input').click()">Upload</button>
+                <input type="file" id="file-input" accept="image/*,video/*" onchange="sendFile()">
+                <button onclick="logout()">Logout</button>
+            </div>
+            <div id="char-counter">0 / 2000</div>
+        </div>
+        <div id="user-list-container">
+            <h3>Online Users</h3>
+            <ul id="user-list"></ul>
+        </div>
+    </div>
+
+    <audio id="join-sound" src="/join.mp3" preload="auto"></audio>
+    <audio id="message-sound" src="/message.mp3" preload="auto"></audio>
+
+   <script>
+  let ws;
+        let username;
+        let replyingTo = null;
+        const MAX_CHARS = 2000;
+        const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+        const joinSound = document.getElementById('join-sound');
+        const messageSound = document.getElementById('message-sound');
+
+        function connectWebSocket() {
+            ws = new WebSocket(`wss://${location.host}`);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                document.querySelector('.status').textContent = 'Connected';
+                document.querySelector('.status').style.color = '#00cc00';
+                ws.send(JSON.stringify({ type: 'auth', username }));
+            };
+
+            ws.onmessage = (event) => {
+                console.log('Received:', event.data);
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'message') {
+                        addMessage(data.id, data.username, data.text, data.file_type, data.file_path, data.reply_to, data.timestamp);
+                        if (data.username !== username) {
+                            playSound(messageSound);
+                            showNotification('New Message', `${data.username}: ${data.text || '[Media]'}`);
+                        }
+                    } else if (data.type === 'history') {
+                        document.getElementById('messages').innerHTML = '<span class="status">Connected</span>';
+                        data.messages.forEach(msg => addMessage(msg.id, msg.username, msg.message, msg.file_type, msg.file_path, msg.reply_to, msg.timestamp));
+                        scrollToBottom();
+                    } else if (data.type === 'userlist') {
+                        updateUserList(data.users);
+                    } else if (data.type === 'delete_message') {
+                        removeMessage(data.id);
+                    } else if (data.type === 'clear') {
+                        document.getElementById('messages').innerHTML = '<span class="status">Connected</span>';
+                        scrollToBottom();
+                    } else if (data.type === 'join') {
+                        if (document.hidden) {
+                            playSound(joinSound);
+                            showNotification('User Joined', `${data.username} has joined`);
+                        }
+                    } else if (data.type === 'kick') {
+                        resetToLogin('You have been kicked');
+                    } else if (data.type === 'ban') {
+                        resetToLogin('You have been banned');
+                    } else if (data.type === 'account_deleted') {
+                        resetToLogin('Your account has been deleted');
+                    } else if (data.type === 'kicked_elsewhere') {
+                        resetToLogin('Logged in from another location');
+                    } else if (data.type === 'error') {
+                        document.getElementById('error').textContent = data.text;
+                    }
+                } catch (err) {
+                    console.error('Parse error:', err);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                document.querySelector('.status').textContent = 'Error';
+                document.querySelector('.status').style.color = '#ff5555';
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket closed');
+                document.querySelector('.status').textContent = 'Disconnected';
+                document.querySelector('.status').style.color = '#ff5555';
+                // Attempt to reconnect after a delay unless logged out
+                if (sessionStorage.getItem('username')) {
+                    setTimeout(connectWebSocket, 1000); // Reconnect after 1 second
+                }
+            };
+        }
+
+        function resetToLogin(message) {
+            if (ws) ws.close();
+            sessionStorage.clear();
+            document.getElementById('admin-container').style.display = 'none';
+            window.location.href = '/';
+            alert(message);
+            username = null;
+        }
+
+        function addMessage(id, username, text, file_type, file_path, reply_to, timestamp) {
+            const messagesDiv = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.dataset.id = id;
+            let content = `<strong>${username}</strong>`;
+            
+            if (reply_to) {
+                const replyMsg = document.querySelector(`.message[data-id="${reply_to}"]`);
+                if (replyMsg) {
+                    const replyUsername = replyMsg.querySelector('strong').textContent;
+                    const replyText = replyMsg.querySelector('.message-text')?.textContent || '[Media]';
+                    content += `<div class="reply-reference" onclick="scrollToMessage(${reply_to})">Replying to ${replyUsername}: ${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''}</div>`;
+                }
+            }
+
+            if (file_type === 'text' && text) {
+                content += `<span class="message-text">${text}</span>`;
+            } else if (file_type.startsWith('image/') && file_path) {
+                content += `<img src="${file_path}" alt="Image">`;
+            } else if (file_type.startsWith('video/') && file_path) {
+                content += `<video controls><source src="${file_path}" type="${file_type}"></video>`;
+            }
+            content += `<span>${new Date(timestamp).toLocaleTimeString()}</span>`;
+            content += `<span class="reply-btn" onclick="setReply(${id})">Reply</span>`;
+            content += `<span class="delete-btn" onclick="deleteMessage(${id})">x</span>`;
+            div.innerHTML = content;
+            messagesDiv.insertBefore(div, messagesDiv.querySelector('.status'));
+            scrollToBottom();
+        }
+
+        function scrollToMessage(id) {
+            const msg = document.querySelector(`.message[data-id="${id}"]`);
+            if (msg) {
+                msg.scrollIntoView({ behavior: 'smooth' });
+                msg.style.backgroundColor = '#e0f7fa';
+                setTimeout(() => msg.style.backgroundColor = '', 1000);
+            }
+        }
+
+        function setReply(id) {
+            replyingTo = id;
+            const msg = document.querySelector(`.message[data-id="${id}"]`);
+            if (msg) {
+                const replyUsername = msg.querySelector('strong').textContent;
+                const replyText = msg.querySelector('.message-text')?.textContent || '[Media]';
+                const replyingToDiv = document.getElementById('replying-to');
+                replyingToDiv.style.display = 'block';
+                replyingToDiv.innerHTML = `Replying to ${replyUsername}: ${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''} <span style="color: red; cursor: pointer;" onclick="cancelReply()">x</span>`;
+            }
+        }
+
+        function cancelReply() {
+            replyingTo = null;
+            const replyingToDiv = document.getElementById('replying-to');
+            replyingToDiv.style.display = 'none';
+            replyingToDiv.innerHTML = '';
+        }
+
+        function removeMessage(id) {
+            const message = document.querySelector(`.message[data-id="${id}"]`);
+            if (message) message.remove();
+        }
+
+        function deleteMessage(id) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'delete', id }));
+            } else {
+                document.getElementById('error').textContent = 'Not connected';
+            }
+        }
+
+        function updateUserList(users) {
+            const userList = document.getElementById('user-list');
+            userList.innerHTML = users.map(user => `<li>${user}</li>`).join('');
+        }
+
+        function scrollToBottom() {
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if (!text) {
+                document.getElementById('error').textContent = 'Message cannot be empty';
+                return;
+            }
+            if (text.length > MAX_CHARS) {
+                document.getElementById('error').textContent = `Message exceeds ${MAX_CHARS} characters`;
+                return;
+            }
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = { type: 'message', username, text };
+                if (replyingTo) {
+                    message.reply_to = replyingTo;
+                }
+                ws.send(JSON.stringify(message));
+                input.value = '';
+                cancelReply();
+                updateCharCounter();
+                document.getElementById('error').textContent = '';
+            } else {
+                document.getElementById('error').textContent = 'Not connected';
+            }
+        }
+
+        function sendFile() {
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+            if (!file) return;
+            if (file.size > MAX_FILE_SIZE) {
+                document.getElementById('error').textContent = 'File size exceeds 500MB';
+                return;
+            }
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const base64Data = e.target.result.split(',')[1];
+                    const message = {
+                        type: 'message',
+                        username,
+                        file: file.type,
+                        file_data: base64Data
+                    };
+                    if (replyingTo) {
+                        message.reply_to = replyingTo;
+                    }
+                    ws.send(JSON.stringify(message));
+                    fileInput.value = '';
+                    cancelReply();
+                    document.getElementById('error').textContent = '';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                document.getElementById('error').textContent = 'Not connected';
+            }
+        }
+
+        function logout() {
+            if (ws) ws.close();
+            sessionStorage.clear();
+            username = null;
+            window.location.href = '/';
+        }
+
+        function updateCharCounter() {
+            const input = document.getElementById('message-input');
+            const counter = document.getElementById('char-counter');
+            const count = input.value.length;
+            counter.textContent = `${count} / ${MAX_CHARS}`;
+            counter.classList.toggle('warning', count > MAX_CHARS);
+        }
+
+        function playSound(audio) {
+            audio.currentTime = 0;
+            audio.play().catch(err => {
+                console.error('Audio error:', err);
+                document.getElementById('error').textContent = 'Audio blocked. Interact with page first.';
+            });
+        }
+
+        function showNotification(title, body) {
+            if (Notification.permission === 'granted') {
+                new Notification(title, { body });
+            } else if (Notification.permission !== 'denied') {
+                Notification.requestPermission().then(perm => {
+                    if (perm === 'granted') new Notification(title, { body });
+                });
+            }
+        }
+
+        // Check for existing session on page load
+        username = sessionStorage.getItem('username');
+        const isAdminStored = sessionStorage.getItem('isAdmin') === '1';
+        if (username && isAdminStored) {
+            document.getElementById('admin-container').style.display = 'flex';
+            document.getElementById('admin-container').style.opacity = '1';
+            connectWebSocket();
+        } else {
+            sessionStorage.clear(); // Clear any partial session data
+            window.location.href = '/'; // Redirect to login if not an admin session
+        }
+
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        document.getElementById('message-input').addEventListener('input', updateCharCounter);
+        updateCharCounter();
+</script>
+</body>
+</html>
