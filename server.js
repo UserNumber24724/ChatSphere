@@ -197,10 +197,6 @@ wss.on('connection', (ws, req) => {
                 if (isAdmin && text && text.startsWith('/')) {
                     const [command, target] = text.split(' ');
                     if (command === '/kick' && target) {
-                        if (target === 'UserNumber2') {
-                            broadcastSystemMessage(`${clientUsername} attempted to kick UserNumber2 (protected)`);
-                            return;
-                        }
                         const [targetRows] = await pool.query('SELECT isAdmin FROM users WHERE username = ?', [target]);
                         if (targetRows.length && targetRows[0].isAdmin) {
                             broadcastSystemMessage(`${clientUsername} attempted to kick admin ${target} (protected)`);
@@ -215,10 +211,6 @@ wss.on('connection', (ws, req) => {
                             broadcastUserList();
                         }
                     } else if (command === '/ban' && target) {
-                        if (target === 'UserNumber2') {
-                            broadcastSystemMessage(`${clientUsername} attempted to ban UserNumber2 (protected)`);
-                            return;
-                        }
                         const [targetRows] = await pool.query('SELECT isAdmin, ip FROM users WHERE username = ?', [target]);
                         if (targetRows.length && targetRows[0].isAdmin) {
                             broadcastSystemMessage(`${clientUsername} attempted to ban admin ${target} (protected)`);
@@ -266,13 +258,13 @@ wss.on('connection', (ws, req) => {
                                 targetWs.send(JSON.stringify({ type: 'admingrant', username: target }));
                             }
                         }
-                    } else if (command === '/adminrevoke' && target && target !== 'UserNumber2') {
+                    } else if (command === '/adminrevoke' && target) {
                         const [targetRows] = await pool.query('SELECT * FROM users WHERE username = ?', [target]);
                         if (targetRows.length) {
                             await pool.query('UPDATE users SET isAdmin = 0 WHERE username = ?', [target]);
                             broadcastSystemMessage(`${target}'s admin revoked by ${clientUsername}`);
                         }
-                    } else if (command === '/delete' && target && target !== 'UserNumber2') {
+                    } else if (command === '/delete' && target) {
                         const [targetRows] = await pool.query('SELECT isAdmin FROM users WHERE username = ?', [target]);
                         if (targetRows.length && targetRows[0].isAdmin) {
                             broadcastSystemMessage(`${clientUsername} attempted to delete admin ${target} (protected)`);
@@ -361,7 +353,7 @@ function broadcastSystemMessage(text) {
             client.send(JSON.stringify({
                 type: 'message',
                 username: 'System',
-                text: text,
+                text,
                 file_type: 'text',
                 timestamp: new Date()
             }));
@@ -396,7 +388,7 @@ function broadcastToAllExceptSender(senderUsername, message) {
 
 function broadcastVoiceStatus(username, type) {
     wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN && client !== clients.get(username)) {
+        if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({ type, username }));
         }
     });

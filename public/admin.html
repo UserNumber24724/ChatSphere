@@ -35,7 +35,6 @@
     position: relative;
     overflow-x: hidden; /* Prevent horizontal scrolling */
 }
-
 .message {
     background: rgba(255, 255, 255, 0.1);
     padding: 14px 18px;
@@ -51,7 +50,8 @@
     align-items: center;
     position: relative;
     max-width: 100%; /* Constrain to parent width */
-}        .message:hover { background: rgba(255, 255, 255, 0.15); }
+}
+        .message:hover { background: rgba(255, 255, 255, 0.15); }
         .message strong { color: var(--primary); font-weight: 600; min-width: 100px; }
         .message-text { flex: 1; min-width: 0; }
         .message span { color: #8888a3; font-size: 12px; opacity: 0.8; }
@@ -119,458 +119,434 @@
     <audio id="voice-join-sound" src="/voice_join.mp3" preload="auto"></audio>
 
     <script>
-       let ws, username, replyingTo = null, localStream, peerConnections = new Map(), currentUsers = [], speakingUsers = new Set();
-    const MAX_CHARS = 2000, MAX_FILE_SIZE = 500 * 1024 * 1024;
-    const joinSound = document.getElementById('join-sound');
-    const messageSound = document.getElementById('message-sound');
-    const voiceJoinSound = document.getElementById('voice-join-sound');
+        let ws, username, replyingTo = null, localStream, peerConnections = new Map(), currentUsers = [], speakingUsers = new Set(), voiceUsers = new Set();
+        const MAX_CHARS = 2000, MAX_FILE_SIZE = 500 * 1024 * 1024;
+        const joinSound = document.getElementById('join-sound');
+        const messageSound = document.getElementById('message-sound');
+        const voiceJoinSound = document.getElementById('voice-join-sound');
 
-    function connectWebSocket() {
-        ws = new WebSocket(`wss://${location.host}`);
-        ws.onopen = () => {
-            document.querySelector('.status').textContent = 'Connected';
-            document.querySelector('.status').style.color = '#00cc00';
-            ws.send(JSON.stringify({ type: 'auth', username }));
-        };
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'message') {
-                addMessage(data.id, data.username, data.text, data.file_type, data.file_path, data.reply_to, data.timestamp);
-                if (data.username !== username) {
-                    playSound(messageSound);
-                    showNotification('New Message', `${data.username}: ${data.text || '[Media]'}`);
-                }
-            } else if (data.type === 'history') {
-                document.getElementById('messages').innerHTML = '<span class="status">Connected</span>';
-                data.messages.forEach(msg => addMessage(msg.id, msg.username, msg.message, msg.file_type, msg.file_path, msg.reply_to, msg.timestamp));
-                scrollToBottom();
-            } else if (data.type === 'userlist') {
-                const prevUsers = new Set(currentUsers);
-                currentUsers = data.users;
-                updateUserList(currentUsers);
-                prevUsers.forEach(user => {
-                    if (!currentUsers.includes(user) && user !== username) {
-                        peerConnections.delete(user);
-                        speakingUsers.delete(user);
-                        updateUserList(currentUsers);
+        function connectWebSocket() {
+            ws = new WebSocket(`wss://${location.host}`);
+            ws.onopen = () => {
+                document.querySelector('.status').textContent = 'Connected';
+                document.querySelector('.status').style.color = '#00cc00';
+                ws.send(JSON.stringify({ type: 'auth', username }));
+            };
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'message') {
+                    addMessage(data.id, data.username, data.text, data.file_type, data.file_path, data.reply_to, data.timestamp);
+                    if (data.username !== username) {
+                        playSound(messageSound);
+                        showNotification('New Message', `${data.username}: ${data.text || '[Media]'}`);
                     }
-                });
-            } else if (data.type === 'delete_message') {
-                removeMessage(data.id);
-            } else if (data.type === 'clear') {
-                document.getElementById('messages').innerHTML = '<span class="status">Connected</span>';
-                scrollToBottom();
-            } else if (data.type === 'join') {
-                if (document.hidden) {
-                    playSound(joinSound);
-                    showNotification('User Joined', `${data.username} has joined`);
+                } else if (data.type === 'history') {
+                    document.getElementById('messages').innerHTML = '<span class="status">Connected</span>';
+                    data.messages.forEach(msg => addMessage(msg.id, msg.username, msg.message, msg.file_type, msg.file_path, msg.reply_to, msg.timestamp));
+                    scrollToBottom();
+                } else if (data.type === 'userlist') {
+                    const prevUsers = new Set(currentUsers);
+                    currentUsers = data.users;
+                    updateUserList(currentUsers);
+                    prevUsers.forEach(user => {
+                        if (!currentUsers.includes(user) && user !== username) {
+                            peerConnections.delete(user);
+                            speakingUsers.delete(user);
+                            voiceUsers.delete(user);
+                            updateUserList(currentUsers);
+                        }
+                    });
+                } else if (data.type === 'delete_message') {
+                    removeMessage(data.id);
+                } else if (data.type === 'clear') {
+                    document.getElementById('messages').innerHTML = '<span class="status">Connected</span>';
+                    scrollToBottom();
+                } else if (data.type === 'join') {
+                    if (document.hidden) {
+                        playSound(joinSound);
+                        showNotification('User Joined', `${data.username} has joined`);
+                    }
+                } else if (data.type === 'kick') resetToLogin('You have been kicked');
+                else if (data.type === 'ban') resetToLogin('You have been banned');
+                else if (data.type === 'account_deleted') resetToLogin('Your account has been deleted');
+                else if (data.type === 'kicked_elsewhere') resetToLogin('Logged in elsewhere');
+                else if (data.type === 'error') document.getElementById('error').textContent = data.text;
+                else if (data.type === 'voice_offer' && data.target === username) handleVoiceOffer(data);
+                else if (data.type === 'voice_answer' && data.target === username) handleVoiceAnswer(data);
+                else if (data.type === 'ice_candidate' && data.target === username) handleIceCandidate(data);
+                else if (data.type === 'join_voice') {
+                    voiceUsers.add(data.username);
+                    updateUserList(currentUsers);
+                    if (data.username !== username && document.hidden) {
+                        playSound(voiceJoinSound);
+                        showNotification('Voice Chat', `${data.username} joined voice chat`);
+                    }
+                } else if (data.type === 'leave_voice') {
+                    voiceUsers.delete(data.username);
+                    updateUserList(currentUsers);
                 }
-            } else if (data.type === 'kick') resetToLogin('You have been kicked');
-            else if (data.type === 'ban') resetToLogin('You have been banned');
-            else if (data.type === 'account_deleted') resetToLogin('Your account has been deleted');
-            else if (data.type === 'kicked_elsewhere') resetToLogin('Logged in elsewhere');
-            else if (data.type === 'error') document.getElementById('error').textContent = data.text;
-            else if (data.type === 'voice_offer' && data.target === username) handleVoiceOffer(data);
-            else if (data.type === 'voice_answer' && data.target === username) handleVoiceAnswer(data);
-            else if (data.type === 'ice_candidate' && data.target === username) handleIceCandidate(data);
-            else if (data.type === 'join_voice') {
-                updateVoiceStatus(data.username, true);
-                if (data.username !== username && document.hidden) {
-                    playSound(voiceJoinSound);
-                    showNotification('Voice Chat', `${data.username} joined voice chat`);
+            };
+            ws.onerror = () => {
+                document.querySelector('.status').textContent = 'Error';
+                document.querySelector('.status').style.color = '#ff5555';
+            };
+            ws.onclose = () => {
+                document.querySelector('.status').textContent = 'Disconnected';
+                document.querySelector('.status').style.color = '#ff5555';
+                if (sessionStorage.getItem('username')) setTimeout(connectWebSocket, 1000);
+            };
+        }
+
+        function resetToLogin(message) {
+            if (ws) ws.close();
+            sessionStorage.clear();
+            document.getElementById('admin-container').style.display = 'none';
+            window.location.href = '/';
+            alert(message);
+            username = null;
+            leaveVoiceChat();
+        }
+
+        function addMessage(id, username, text, file_type, file_path, reply_to, timestamp) {
+            const messagesDiv = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.dataset.id = id;
+            let content = `<strong>${username}</strong>`;
+            if (reply_to) {
+                const replyMsg = document.querySelector(`.message[data-id="${reply_to}"]`);
+                if (replyMsg) {
+                    const replyUsername = replyMsg.querySelector('strong').textContent;
+                    const replyText = replyMsg.querySelector('.message-text')?.textContent || '[Media]';
+                    content += `<div class="reply-reference" onclick="scrollToMessage(${reply_to})">Replying to ${replyUsername}: ${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''}</div>`;
                 }
-                updateUserList(currentUsers);
-            } else if (data.type === 'leave_voice') {
-                updateVoiceStatus(data.username, false);
-                updateUserList(currentUsers);
             }
-        };
-        ws.onerror = () => {
-            document.querySelector('.status').textContent = 'Error';
-            document.querySelector('.status').style.color = '#ff5555';
-        };
-        ws.onclose = () => {
-            document.querySelector('.status').textContent = 'Disconnected';
-            document.querySelector('.status').style.color = '#ff5555';
-            if (sessionStorage.getItem('username')) setTimeout(connectWebSocket, 1000);
-        };
-    }
+            if (file_type === 'text' && text) content += `<span class="message-text">${text}</span>`;
+            else if (file_type.startsWith('image/') && file_path) content += `<img src="${file_path}" alt="Image">`;
+            else if (file_type.startsWith('video/') && file_path) content += `<video controls><source src="${file_path}" type="${file_type}"></video>`;
+            content += `<span>${new Date(timestamp).toLocaleTimeString()}</span>`;
+            content += `<span class="reply-btn" onclick="setReply(${id})">Reply</span>`;
+            content += `<span class="delete-btn" onclick="deleteMessage(${id})">x</span>`;
+            div.innerHTML = content;
+            messagesDiv.insertBefore(div, messagesDiv.querySelector('.status'));
+            scrollToBottom();
+        }
 
-    function resetToLogin(message) {
-        if (ws) ws.close();
-        sessionStorage.clear();
-        document.getElementById('admin-container').style.display = 'none';
-        window.location.href = '/';
-        alert(message);
-        username = null;
-        leaveVoiceChat();
-    }
-
-    function addMessage(id, username, text, file_type, file_path, reply_to, timestamp) {
-        const messagesDiv = document.getElementById('messages');
-        const div = document.createElement('div');
-        div.className = 'message';
-        div.dataset.id = id;
-        let content = `<strong>${username}</strong>`;
-        if (reply_to) {
-            const replyMsg = document.querySelector(`.message[data-id="${reply_to}"]`);
-            if (replyMsg) {
-                const replyUsername = replyMsg.querySelector('strong').textContent;
-                const replyText = replyMsg.querySelector('.message-text')?.textContent || '[Media]';
-                content += `<div class="reply-reference" onclick="scrollToMessage(${reply_to})">Replying to ${replyUsername}: ${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''}</div>`;
+        function scrollToMessage(id) {
+            const msg = document.querySelector(`.message[data-id="${id}"]`);
+            if (msg) {
+                msg.scrollIntoView({ behavior: 'smooth' });
+                msg.style.backgroundColor = '#e0f7fa';
+                setTimeout(() => msg.style.backgroundColor = '', 1000);
             }
         }
-        if (file_type === 'text' && text) content += `<span class="message-text">${text}</span>`;
-        else if (file_type.startsWith('image/') && file_path) content += `<img src="${file_path}" alt="Image">`;
-        else if (file_type.startsWith('video/') && file_path) content += `<video controls><source src="${file_path}" type="${file_type}"></video>`;
-        content += `<span>${new Date(timestamp).toLocaleTimeString()}</span>`;
-        content += `<span class="reply-btn" onclick="setReply(${id})">Reply</span>`;
-        content += `<span class="delete-btn" onclick="deleteMessage(${id})">x</span>`;
-        div.innerHTML = content;
-        messagesDiv.insertBefore(div, messagesDiv.querySelector('.status'));
-        scrollToBottom();
-    }
 
-    function scrollToMessage(id) {
-        const msg = document.querySelector(`.message[data-id="${id}"]`);
-        if (msg) {
-            msg.scrollIntoView({ behavior: 'smooth' });
-            msg.style.backgroundColor = '#e0f7fa';
-            setTimeout(() => msg.style.backgroundColor = '', 1000);
-        }
-    }
-
-    function setReply(id) {
-        replyingTo = id;
-        const msg = document.querySelector(`.message[data-id="${id}"]`);
-        if (msg) {
-            const replyUsername = msg.querySelector('strong').textContent;
-            const replyText = msg.querySelector('.message-text')?.textContent || '[Media]';
-            const replyingToDiv = document.getElementById('replying-to');
-            replyingToDiv.style.display = 'block';
-            replyingToDiv.innerHTML = `Replying to ${replyUsername}: ${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''} <span style="color: red; cursor: pointer;" onclick="cancelReply()">x</span>`;
-        }
-    }
-
-    function cancelReply() {
-        replyingTo = null;
-        document.getElementById('replying-to').style.display = 'none';
-        document.getElementById('replying-to').innerHTML = '';
-    }
-
-    function removeMessage(id) {
-        const message = document.querySelector(`.message[data-id="${id}"]`);
-        if (message) message.remove();
-    }
-
-    function deleteMessage(id) {
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'delete', id }));
-        else document.getElementById('error').textContent = 'Not connected';
-    }
-
-    function updateUserList(users) {
-        document.getElementById('user-list').innerHTML = users.map(user => {
-            const isSpeaking = speakingUsers.has(user);
-            const isInVoice = peerConnections.has(user) || (user === username && localStream);
-            return `<li data-username="${user}">${user}<span class="voice-indicator ${isInVoice ? 'in-voice' : ''} ${isSpeaking ? 'speaking' : ''}"></span></li>`;
-        }).join('');
-    }
-
-    function updateVoiceStatus(user, isJoining) {
-        if (isJoining) {
-            if (!peerConnections.has(user)) {
-                createPeerConnection(user);
+        function setReply(id) {
+            replyingTo = id;
+            const msg = document.querySelector(`.message[data-id="${id}"]`);
+            if (msg) {
+                const replyUsername = msg.querySelector('strong').textContent;
+                const replyText = msg.querySelector('.message-text')?.textContent || '[Media]';
+                const replyingToDiv = document.getElementById('replying-to');
+                replyingToDiv.style.display = 'block';
+                replyingToDiv.innerHTML = `Replying to ${replyUsername}: ${replyText.substring(0, 50)}${replyText.length > 50 ? '...' : ''} <span style="color: red; cursor: pointer;" onclick="cancelReply()">x</span>`;
             }
-        } else {
-            const pc = peerConnections.get(user);
-            if (pc && typeof pc.close === 'function') {
-                pc.close();
+        }
+
+        function cancelReply() {
+            replyingTo = null;
+            document.getElementById('replying-to').style.display = 'none';
+            document.getElementById('replying-to').innerHTML = '';
+        }
+
+        function removeMessage(id) {
+            const message = document.querySelector(`.message[data-id="${id}"]`);
+            if (message) message.remove();
+        }
+
+        function deleteMessage(id) {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'delete', id }));
+            else document.getElementById('error').textContent = 'Not connected';
+        }
+
+        function updateUserList(users) {
+            document.getElementById('user-list').innerHTML = users.map(user => {
+                const isSpeaking = speakingUsers.has(user);
+                const isInVoice = voiceUsers.has(user);
+                return `<li data-username="${user}">${user}<span class="voice-indicator ${isInVoice ? 'in-voice' : ''} ${isSpeaking ? 'speaking' : ''}"></span></li>`;
+            }).join('');
+        }
+
+        function scrollToBottom() {
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            if (!input) {
+                console.error('Message input element not found');
+                return;
             }
-            peerConnections.delete(user);
-            speakingUsers.delete(user);
-        }
-        updateUserList(currentUsers);
-    }
-
-    function scrollToBottom() {
-        const messagesDiv = document.getElementById('messages');
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }
-
-    function sendMessage() {
-    const input = document.getElementById('message-input');
-    if (!input) {
-        console.error('Message input element not found');
-        return;
-    }
-    const text = input.value.trim();
-    const errorElement = document.getElementById('error');
-    if (!text) return errorElement.textContent = 'Message cannot be empty';
-    if (text.length > MAX_CHARS) return errorElement.textContent = `Message exceeds ${MAX_CHARS} characters`;
-
-    // Protect UserNumber2 from kick and ban commands
-    const protectedUser = "UserNumber2";
-    if (text.startsWith('/kick') || text.startsWith('/ban')) {
-        const target = text.split(' ')[1]; // Extract target username
-        if (target && target.toLowerCase() === protectedUser.toLowerCase()) {
-            errorElement.textContent = `${protectedUser} is protected and cannot be kicked or banned.`;
-            return;
-        }
-    }
-
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        const message = { type: 'message', username, text };
-        if (replyingTo) message.reply_to = replyingTo;
-        ws.send(JSON.stringify(message));
-        input.value = '';
-        cancelReply();
-        hideMentionSuggestions();
-        updateCharCounter();
-        errorElement.textContent = '';
-    } else errorElement.textContent = 'Not connected';
-}
-    function sendFile() {
-        const fileInput = document.getElementById('file-input');
-        const file = fileInput.files[0];
-        if (!file) return;
-        if (file.size > MAX_FILE_SIZE) return document.getElementById('error').textContent = 'File size exceeds 500MB';
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const base64Data = e.target.result.split(',')[1];
-                const message = { type: 'message', username, file: file.type, file_data: base64Data };
+            const text = input.value.trim();
+            const errorElement = document.getElementById('error');
+            if (!text) return errorElement.textContent = 'Message cannot be empty';
+            if (text.length > MAX_CHARS) return errorElement.textContent = `Message exceeds ${MAX_CHARS} characters`;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = { type: 'message', username, text };
                 if (replyingTo) message.reply_to = replyingTo;
                 ws.send(JSON.stringify(message));
-                fileInput.value = '';
+                input.value = '';
                 cancelReply();
-                document.getElementById('error').textContent = '';
+                hideMentionSuggestions();
+                updateCharCounter();
+                errorElement.textContent = '';
+            } else errorElement.textContent = 'Not connected';
+        }
+
+        function sendFile() {
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+            if (!file) return;
+            if (file.size > MAX_FILE_SIZE) return document.getElementById('error').textContent = 'File size exceeds 500MB';
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const base64Data = e.target.result.split(',')[1];
+                    const message = { type: 'message', username, file: file.type, file_data: base64Data };
+                    if (replyingTo) message.reply_to = replyingTo;
+                    ws.send(JSON.stringify(message));
+                    fileInput.value = '';
+                    cancelReply();
+                    document.getElementById('error').textContent = '';
+                };
+                reader.readAsDataURL(file);
+            } else document.getElementById('error').textContent = 'Not connected';
+        }
+
+        async function joinVoiceChat() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                ws.send(JSON.stringify({ type: 'join_voice', username }));
+                voiceUsers.add(username);
+                updateUserList(currentUsers);
+                currentUsers.forEach(targetUser => {
+                    if (targetUser !== username) createPeerConnection(targetUser);
+                });
+                document.getElementById('join-voice-btn').disabled = true;
+                document.getElementById('leave-voice-btn').disabled = false;
+                detectSpeaking();
+            } catch (err) {
+                document.getElementById('error').textContent = 'Failed to join voice chat';
+            }
+        }
+
+        function leaveVoiceChat() {
+            if (!localStream && peerConnections.size === 0) return;
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            peerConnections.forEach((pc, user) => {
+                if (pc && typeof pc.close === 'function') {
+                    pc.close();
+                }
+            });
+            peerConnections.clear();
+            speakingUsers.delete(username);
+            voiceUsers.delete(username);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'leave_voice', username }));
+            }
+            updateUserList(currentUsers);
+            document.getElementById('join-voice-btn').disabled = false;
+            document.getElementById('leave-voice-btn').disabled = true;
+        }
+
+        function createPeerConnection(targetUser) {
+            const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            peerConnections.set(targetUser, pc);
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({ type: 'ice_candidate', candidate: event.candidate, target: targetUser, username }));
+                }
             };
-            reader.readAsDataURL(file);
-        } else document.getElementById('error').textContent = 'Not connected';
-    }
-
-    async function joinVoiceChat() {
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            ws.send(JSON.stringify({ type: 'join_voice', username }));
-            currentUsers.forEach(targetUser => {
-                if (targetUser !== username) createPeerConnection(targetUser);
-            });
-            document.getElementById('join-voice-btn').disabled = true;
-            document.getElementById('leave-voice-btn').disabled = false;
-            detectSpeaking();
-            updateVoiceStatus(username, true);
-        } catch (err) {
-            document.getElementById('error').textContent = 'Failed to join voice chat';
+            pc.ontrack = (event) => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.autoplay = true;
+                detectRemoteSpeaking(event.streams[0], targetUser);
+            };
+            pc.createOffer()
+                .then(offer => pc.setLocalDescription(offer))
+                .then(() => {
+                    ws.send(JSON.stringify({ type: 'voice_offer', offer: pc.localDescription, target: targetUser, username }));
+                });
         }
-    }
 
-    function leaveVoiceChat() {
-        if (!localStream && peerConnections.size === 0) return;
-        if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
-            localStream = null;
-        }
-        peerConnections.forEach((pc, user) => {
-            if (pc && typeof pc.close === 'function') {
-                pc.close();
-            }
-        });
-        peerConnections.clear();
-        speakingUsers.delete(username);
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'leave_voice', username }));
-        }
-        const joinBtn = document.getElementById('join-voice-btn');
-        const leaveBtn = document.getElementById('leave-voice-btn');
-        if (joinBtn) joinBtn.disabled = false;
-        if (leaveBtn) leaveBtn.disabled = true;
-        updateVoiceStatus(username, false);
-    }
-
-    function createPeerConnection(targetUser) {
-        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-        peerConnections.set(targetUser, pc);
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                ws.send(JSON.stringify({ type: 'ice_candidate', candidate: event.candidate, target: targetUser, username }));
-            }
-        };
-        pc.ontrack = (event) => {
-            const audio = new Audio();
-            audio.srcObject = event.streams[0];
-            audio.autoplay = true;
-            detectRemoteSpeaking(event.streams[0], targetUser);
-        };
-        pc.createOffer()
-            .then(offer => pc.setLocalDescription(offer))
-            .then(() => {
-                ws.send(JSON.stringify({ type: 'voice_offer', offer: pc.localDescription, target: targetUser, username }));
-            });
-    }
-
-    async function handleVoiceOffer(data) {
-        if (!localStream) return;
-        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-        peerConnections.set(data.username, pc);
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                ws.send(JSON.stringify({ type: 'ice_candidate', candidate: event.candidate, target: data.username, username }));
-            }
-        };
-        pc.ontrack = (event) => {
-            const audio = new Audio();
-            audio.srcObject = event.streams[0];
-            audio.autoplay = true;
-            detectRemoteSpeaking(event.streams[0], data.username);
-        };
-        await pc.setRemoteDescription(data.offer);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: 'voice_answer', answer: pc.localDescription, target: data.username, username }));
-    }
-
-    async function handleVoiceAnswer(data) {
-        const pc = peerConnections.get(data.username);
-        if (pc) await pc.setRemoteDescription(data.answer);
-    }
-
-    async function handleIceCandidate(data) {
-        const pc = peerConnections.get(data.username);
-        if (pc) await pc.addIceCandidate(data.candidate);
-    }
-
-    function detectSpeaking() {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const analyser = audioContext.createAnalyser();
-        const source = audioContext.createMediaStreamSource(localStream);
-        source.connect(analyser);
-        analyser.fftSize = 2048;
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        function checkVolume() {
+        async function handleVoiceOffer(data) {
             if (!localStream) return;
-            analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-            if (average > 30) {
-                speakingUsers.add(username);
-            } else {
-                speakingUsers.delete(username);
-            }
-            updateUserList(currentUsers);
-            requestAnimationFrame(checkVolume);
+            const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            peerConnections.set(data.username, pc);
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({ type: 'ice_candidate', candidate: event.candidate, target: data.username, username }));
+                }
+            };
+            pc.ontrack = (event) => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.autoplay = true;
+                detectRemoteSpeaking(event.streams[0], data.username);
+            };
+            await pc.setRemoteDescription(data.offer);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            ws.send(JSON.stringify({ type: 'voice_answer', answer: pc.localDescription, target: data.username, username }));
         }
-        checkVolume();
-    }
 
-    function detectRemoteSpeaking(stream, user) {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const analyser = audioContext.createAnalyser();
-        const source = audioContext.createMediaStreamSource(stream);
-        source.connect(analyser);
-        analyser.fftSize = 2048;
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        function checkVolume() {
-            analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-            if (average > 30) {
-                speakingUsers.add(user);
-            } else {
-                speakingUsers.delete(user);
-            }
-            updateUserList(currentUsers);
-            requestAnimationFrame(checkVolume);
+        async function handleVoiceAnswer(data) {
+            const pc = peerConnections.get(data.username);
+            if (pc) await pc.setRemoteDescription(data.answer);
         }
-        checkVolume();
-    }
 
-    function logout() {
-        if (ws) ws.close();
-        leaveVoiceChat();
-        sessionStorage.clear();
-        username = null;
-        window.location.href = '/';
-    }
+        async function handleIceCandidate(data) {
+            const pc = peerConnections.get(data.username);
+            if (pc) await pc.addIceCandidate(data.candidate);
+        }
 
-    function updateCharCounter() {
-        const input = document.getElementById('message-input');
-        const counter = document.getElementById('char-counter');
-        const count = input ? input.value.length : 0;
-        counter.textContent = `${count} / ${MAX_CHARS}`;
-        counter.classList.toggle('warning', count > MAX_CHARS);
-    }
+        function detectSpeaking() {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(localStream);
+            source.connect(analyser);
+            analyser.fftSize = 2048;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-    function playSound(audio) {
-        audio.currentTime = 0;
-        audio.play().catch(() => document.getElementById('error').textContent = 'Audio blocked. Interact with page first.');
-    }
-
-    function showNotification(title, body) {
-        if (Notification.permission === 'granted') new Notification(title, { body });
-        else if (Notification.permission !== 'denied') Notification.requestPermission().then(perm => {
-            if (perm === 'granted') new Notification(title, { body });
-        });
-    }
-
-    const messageInput = document.getElementById('mention-suggestions');
-    messageInput.addEventListener('input', (e) => {
-        updateCharCounter();
-        const text = e.target.value;
-        const cursorPos = e.target.selectionStart;
-        const wordStart = text.lastIndexOf('@', cursorPos - 1);
-        if (wordStart !== -1 && cursorPos > wordStart) {
-            const search = text.substring(wordStart + 1, cursorPos).toLowerCase();
-            const matches = currentUsers.filter(user => user.toLowerCase().startsWith(search) && user !== username);
-            if (matches.length > 0) showMentionSuggestions(matches, wordStart, cursorPos);
-            else hideMentionSuggestions();
-        } else hideMentionSuggestions();
-    });
-
-    function showMentionSuggestions(matches, wordStart, cursorPos) {
-        mentionSuggestions.innerHTML = matches.map(user => `<div class="mention-suggestion" onclick="insertMention('${user}', ${wordStart}, ${cursorPos})">${user}</div>`).join('');
-        mentionSuggestions.style.display = 'block';
-    }
-
-    function hideMentionSuggestions() {
-        mentionSuggestions.style.display = 'none';
-    }
-
-    function insertMention(user, wordStart, cursorPos) {
-        const text = messageInput.value;
-        messageInput.value = text.substring(0, wordStart) + `@${user} ` + text.substring(cursorPos);
-        hideMentionSuggestions();
-        updateCharCounter();
-        messageInput.focus();
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        username = sessionStorage.getItem('username');
-        const isAdminStored = sessionStorage.getItem('isAdmin') === '1';
-        if (username && isAdminStored) {
-            const adminContainer = document.getElementById('admin-container');
-            if (adminContainer) {
-                adminContainer.style.display = 'flex';
-                adminContainer.style.opacity = '1';
+            function checkVolume() {
+                if (!localStream) return;
+                analyser.getByteFrequencyData(dataArray);
+                const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                if (average > 30) {
+                    speakingUsers.add(username);
+                } else {
+                    speakingUsers.delete(username);
+                }
+                updateUserList(currentUsers);
+                requestAnimationFrame(checkVolume);
             }
-            connectWebSocket();
-        } else {
+            checkVolume();
+        }
+
+        function detectRemoteSpeaking(stream, user) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+            analyser.fftSize = 2048;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            function checkVolume() {
+                analyser.getByteFrequencyData(dataArray);
+                const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                if (average > 30) {
+                    speakingUsers.add(user);
+                } else {
+                    speakingUsers.delete(user);
+                }
+                updateUserList(currentUsers);
+                requestAnimationFrame(checkVolume);
+            }
+            checkVolume();
+        }
+
+        function logout() {
+            if (ws) ws.close();
+            leaveVoiceChat();
             sessionStorage.clear();
+            username = null;
             window.location.href = '/';
         }
 
-        const messageInput = document.getElementById('message-input');
-        if (messageInput) {
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
+        function updateCharCounter() {
+            const input = document.getElementById('message-input');
+            const counter = document.getElementById('char-counter');
+            const count = input ? input.value.length : 0;
+            counter.textContent = `${count} / ${MAX_CHARS}`;
+            counter.classEOSList.toggle('warning', count > MAX_CHARS);
+        }
+
+        function playSound(audio) {
+            audio.currentTime = 0;
+            audio.play().catch(() => document.getElementById('error').textContent = 'Audio blocked. Interact with page first.');
+        }
+
+        function showNotification(title, body) {
+            if (Notification.permission === 'granted') new Notification(title, { body });
+            else if (Notification.permission !== 'denied') Notification.requestPermission().then(perm => {
+                if (perm === 'granted') new Notification(title, { body });
             });
         }
-        updateCharCounter();
-    });    </script>
+
+        const messageInput = document.getElementById('message-input');
+        messageInput.addEventListener('input', (e) => {
+            updateCharCounter();
+            const text = e.target.value;
+            const cursorPos = e.target.selectionStart;
+            const wordStart = text.lastIndexOf('@', cursorPos - 1);
+            if (wordStart !== -1 && cursorPos > wordStart) {
+                const search = text.substring(wordStart + 1, cursorPos).toLowerCase();
+                const matches = currentUsers.filter(user => user.toLowerCase().startsWith(search) && user !== username);
+                if (matches.length > 0) showMentionSuggestions(matches, wordStart, cursorPos);
+                else hideMentionSuggestions();
+            } else hideMentionSuggestions();
+        });
+
+        function showMentionSuggestions(matches, wordStart, cursorPos) {
+            mentionSuggestions.innerHTML = matches.map(user => `<div class="mention-suggestion" onclick="insertMention('${user}', ${wordStart}, ${cursorPos})">${user}</div>`).join('');
+            mentionSuggestions.style.display = 'block';
+        }
+
+        function hideMentionSuggestions() {
+            mentionSuggestions.style.display = 'none';
+        }
+
+        function insertMention(user, wordStart, cursorPos) {
+            const text = messageInput.value;
+            messageInput.value = text.substring(0, wordStart) + `@${user} ` + text.substring(cursorPos);
+            hideMentionSuggestions();
+            updateCharCounter();
+            messageInput.focus();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            username = sessionStorage.getItem('username');
+            const isAdminStored = sessionStorage.getItem('isAdmin') === '1';
+            if (username && isAdminStored) {
+                const adminContainer = document.getElementById('admin-container');
+                if (adminContainer) {
+                    adminContainer.style.display = 'flex';
+                    adminContainer.style.opacity = '1';
+                }
+                connectWebSocket();
+            } else {
+                sessionStorage.clear();
+                window.location.href = '/';
+            }
+
+            const messageInput = document.getElementById('message-input');
+            if (messageInput) {
+                messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                    }
+                });
+            }
+            updateCharCounter();
+        });
+    </script>
 </body>
 </html>

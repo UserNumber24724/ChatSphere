@@ -36,7 +36,7 @@
             border-radius: 15px; 
             margin-bottom: 25px; 
             position: relative; 
-            overflow-x: hidden; /* Merged from duplicate rule */
+            overflow-x: hidden;
         }
         .message { 
             background: rgba(255, 255, 255, 0.1); 
@@ -62,7 +62,7 @@
         .delete-btn { position: absolute; top: 5px; right: 5px; color: #ff5555; font-size: 16px; cursor: pointer; display: none; }
         .message:hover .delete-btn { display: block; }
         .delete-btn:hover { color: #ff7777; }
-        .input-container { display: flex; gap: 12px; align-items: center; position: relative; height: auto; overflow: hidden; /* Fixed invalid overflow */ }
+        .input-container { display: flex; gap: 12px; align-items: center; position: relative; height: auto; overflow: hidden; }
         #file-input { display: none; }
         #char-counter { font-size: 12px; color: #aaa; text-align: right; margin-top: 5px; }
         #char-counter.warning { color: #ff5555; }
@@ -130,12 +130,12 @@
     <audio id="voice-join-sound" src="/voice_join.mp3" preload="auto"></audio>
 
     <script>
-        let ws, username, replyingTo = null, localStream, peerConnections = new Map(), currentUsers = [], speakingUsers = new Set();
+        let ws, username, replyingTo = null, localStream, peerConnections = new Map(), currentUsers = [], speakingUsers = new Set(), voiceUsers = new Set();
         const MAX_CHARS = 2000, MAX_FILE_SIZE = 500 * 1024 * 1024;
         const joinSound = document.getElementById('join-sound');
         const messageSound = document.getElementById('message-sound');
         const voiceJoinSound = document.getElementById('voice-join-sound');
-        const mentionSuggestions = document.getElementById('mention-suggestions'); // Added declaration
+        const mentionSuggestions = document.getElementById('mention-suggestions');
 
         function connectWebSocket() {
             ws = new WebSocket(`wss://${location.host}`);
@@ -164,6 +164,7 @@
                         if (!currentUsers.includes(user) && user !== username) {
                             peerConnections.delete(user);
                             speakingUsers.delete(user);
+                            voiceUsers.delete(user);
                             updateUserList(currentUsers);
                         }
                     });
@@ -186,14 +187,14 @@
                 else if (data.type === 'voice_answer' && data.target === username) handleVoiceAnswer(data);
                 else if (data.type === 'ice_candidate' && data.target === username) handleIceCandidate(data);
                 else if (data.type === 'join_voice') {
-                    updateVoiceStatus(data.username, true);
+                    voiceUsers.add(data.username);
+                    updateUserList(currentUsers);
                     if (data.username !== username && document.hidden) {
                         playSound(voiceJoinSound);
                         showNotification('Voice Chat', `${data.username} joined voice chat`);
                     }
-                    updateUserList(currentUsers);
                 } else if (data.type === 'leave_voice') {
-                    updateVoiceStatus(data.username, false);
+                    voiceUsers.delete(data.username);
                     updateUserList(currentUsers);
                 }
             };
@@ -281,25 +282,11 @@
         }
 
         function updateUserList(users) {
-    document.getElementById('user-list').innerHTML = users.map(user => {
-        const isSpeaking = speakingUsers.has(user);
-        const isInVoice = user === username && localStream; // Only show in-voice for the local user
-        return `<li data-username="${user}">${user}<span class="voice-indicator ${isInVoice ? 'in-voice' : ''} ${isSpeaking ? 'speaking' : ''}"></span></li>`;
-    }).join('');
-}        function updateVoiceStatus(user, isJoining) {
-            if (isJoining) {
-                if (!peerConnections.has(user)) {
-                    createPeerConnection(user);
-                }
-            } else {
-                const pc = peerConnections.get(user);
-                if (pc && typeof pc.close === 'function') {
-                    pc.close();
-                }
-                peerConnections.delete(user);
-                speakingUsers.delete(user);
-            }
-            updateUserList(currentUsers);
+            document.getElementById('user-list').innerHTML = users.map(user => {
+                const isSpeaking = speakingUsers.has(user);
+                const isInVoice = voiceUsers.has(user);
+                return `<li data-username="${user}">${user}<span class="voice-indicator ${isInVoice ? 'in-voice' : ''} ${isSpeaking ? 'speaking' : ''}"></span></li>`;
+            }).join('');
         }
 
         function scrollToBottom() {
@@ -353,13 +340,14 @@
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 ws.send(JSON.stringify({ type: 'join_voice', username }));
+                voiceUsers.add(username);
+                updateUserList(currentUsers);
                 currentUsers.forEach(targetUser => {
                     if (targetUser !== username) createPeerConnection(targetUser);
                 });
                 document.getElementById('join-voice-btn').disabled = true;
                 document.getElementById('leave-voice-btn').disabled = false;
                 detectSpeaking();
-                updateVoiceStatus(username, true);
             } catch (err) {
                 document.getElementById('error').textContent = 'Failed to join voice chat';
             }
@@ -378,14 +366,13 @@
             });
             peerConnections.clear();
             speakingUsers.delete(username);
+            voiceUsers.delete(username);
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'leave_voice', username }));
             }
-            const joinBtn = document.getElementById('join-voice-btn');
-            const leaveBtn = document.getElementById('leave-voice-btn');
-            if (joinBtn) joinBtn.disabled = false;
-            if (leaveBtn) leaveBtn.disabled = true;
-            updateVoiceStatus(username, false);
+            updateUserList(currentUsers);
+            document.getElementById('join-voice-btn').disabled = false;
+            document.getElementById('leave-voice-btn').disabled = true;
         }
 
         function createPeerConnection(targetUser) {
@@ -515,6 +502,56 @@
             });
         }
 
+        async function login() {
+            const usernameInput = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            if (!usernameInput || usernameInput.length > 15) return document.getElementById('error').textContent = 'Username must be 1-15 characters';
+            if (!password) return document.getElementById('error').textContent = 'Password is required';
+
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: usernameInput, password })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                username = data.username;
+                sessionStorage.setItem('username', username);
+                sessionStorage.setItem('isAdmin', data.isAdmin ? '1' : '0');
+                document.getElementById('auth-container').style.display = 'none';
+                document.getElementById('chat-container').style.display = 'flex';
+                document.getElementById('chat-container').style.opacity = '1';
+                connectWebSocket();
+            } else {
+                document.getElementById('error').textContent = data.error || 'Login failed';
+            }
+        }
+
+        async function register() {
+            const usernameInput = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            if (!usernameInput || usernameInput.length > 15) return document.getElementById('error').textContent = 'Username must be 1-15 characters';
+            if (!password) return document.getElementById('error').textContent = 'Password is required';
+
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: usernameInput, password })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                username = data.username;
+                sessionStorage.setItem('username', username);
+                sessionStorage.setItem('isAdmin', '0');
+                document.getElementById('auth-container').style.display = 'none';
+                document.getElementById('chat-container').style.display = 'flex';
+                document.getElementById('chat-container').style.opacity = '1';
+                connectWebSocket();
+            } else {
+                document.getElementById('error').textContent = data.error || 'Registration failed';
+            }
+        }
+
         const messageInput = document.getElementById('message-input');
         messageInput.addEventListener('input', (e) => {
             updateCharCounter();
@@ -547,99 +584,24 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-    username = sessionStorage.getItem('username');
-    const authContainer = document.getElementById('auth-container');
-    const chatContainer = document.getElementById('chat-container');
-
-    if (username) {
-        if (chatContainer) {
-            chatContainer.style.display = 'flex';
-            chatContainer.style.opacity = '1';
-        }
-        if (authContainer) {
-            authContainer.style.display = 'none'; // Explicitly hide auth container
-        }
-        connectWebSocket();
-    } else {
-        if (authContainer) {
-            authContainer.style.display = 'block';
-        }
-        if (chatContainer) {
-            chatContainer.style.display = 'none'; // Ensure chat container stays hidden
-        }
-    }
-
-    const messageInput = document.getElementById('message-input');
-    if (messageInput) {
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
-    }
-    updateCharCounter();
-});
-function updateVoiceStatus(user, isJoining) {
-    if (isJoining) {
-        if (user !== username && !peerConnections.has(user)) {
-            createPeerConnection(user); // Ensure peer connection is created for remote users
-        }
-    } else {
-        const pc = peerConnections.get(user);
-        if (pc && typeof pc.close === 'function') {
-            pc.close();
-        }
-        peerConnections.delete(user);
-        speakingUsers.delete(user);
-    }
-    updateUserList(currentUsers);
-}
-        async function login() {
-            const usernameInput = document.getElementById('username').value.trim();
-            const passwordInput = document.getElementById('password').value;
-            if (!usernameInput || !passwordInput) return document.getElementById('error').textContent = 'All fields required'; // Fixed ID
-            const response = await fetch('/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: usernameInput, password: passwordInput })
-            });
-            const data = await response.json();
-            if (response.ok) {
-                sessionStorage.setItem('username', data.username);
-                sessionStorage.setItem('isAdmin', data.isAdmin ? '1' : '0');
-                const loginContainer = document.getElementById('auth-container');
-                const chatContainer = document.getElementById('chat-container');
-                if (loginContainer) loginContainer.style.display = 'none';
-                if (chatContainer) {
-                    chatContainer.style.display = 'flex';
-                    chatContainer.style.opacity = '1';
-                }
-                username = data.username;
-                connectWebSocket();
-            } else document.getElementById('error').textContent = data.error; // Fixed ID
-        }
-
-        async function register() {
-            const usernameInput = document.getElementById('username').value.trim();
-            const passwordInput = document.getElementById('password').value;
-            if (!usernameInput || !passwordInput) return document.getElementById('error').textContent = 'All fields required'; // Fixed ID
-            const response = await fetch('/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: usernameInput, password: passwordInput })
-            });
-            const data = await response.json();
-            if (response.ok) {
-                sessionStorage.setItem('username', data.username);
-                sessionStorage.setItem('isAdmin', '0');
+            username = sessionStorage.getItem('username');
+            if (username) {
                 document.getElementById('auth-container').style.display = 'none';
                 document.getElementById('chat-container').style.display = 'flex';
                 document.getElementById('chat-container').style.opacity = '1';
-                username = data.username;
                 connectWebSocket();
-            } else document.getElementById('error').textContent = data.error; // Fixed ID
-        }
+            }
+            const messageInput = document.getElementById('message-input');
+            if (messageInput) {
+                messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                    }
+                });
+            }
+            updateCharCounter();
+        });
     </script>
 </body>
 </html>
