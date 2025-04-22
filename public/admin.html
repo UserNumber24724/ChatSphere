@@ -114,7 +114,7 @@
         </div>
     </div>
 
-    <audio id="join-sound" src="/join.mp3" preload="auto"></audio>
+	<audio id="join-sound" src="/join.mp3" preload="auto"></audio>
     <audio id="message-sound" src="/message.mp3" preload="auto"></audio>
     <audio id="voice-join-sound" src="/voice_join.mp3" preload="auto"></audio>
 
@@ -429,7 +429,7 @@
                 if (!localStream) return;
                 analyser.getByteFrequencyData(dataArray);
                 const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                if (average > 30) {
+                if (average > 10) {
                     speakingUsers.add(username);
                 } else {
                     speakingUsers.delete(username);
@@ -481,13 +481,6 @@
         function playSound(audio) {
             audio.currentTime = 0;
             audio.play().catch(() => document.getElementById('error').textContent = 'Audio blocked. Interact with page first.');
-        }
-
-        function showNotification(title, body) {
-            if (Notification.permission === 'granted') new Notification(title, { body });
-            else if (Notification.permission !== 'denied') Notification.requestPermission().then(perm => {
-                if (perm === 'granted') new Notification(title, { body });
-            });
         }
 
         const messageInput = document.getElementById('message-input');
